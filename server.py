@@ -2,7 +2,7 @@ import os.path as path
 import sys
 
 from comm_interface import CommInterfaceFactory
-from udp_filetransfer import UDPFileTransfer
+from stub_udp import UDPFileTransfer
 
 
 def main():

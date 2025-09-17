@@ -21,7 +21,7 @@ class UDPFileTransfer(CommInterface):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     def initialize_as_server(self, host, port):
-        pass
+        self.socket.bind((host, port))
 
     def initialize_as_client(self):
         pass
@@ -38,13 +38,16 @@ class UDPFileTransfer(CommInterface):
 
 
     def send_message(self, data, parameters="", addr=None):
-        pass
+        
 
     def send_file(self, filepath, addr):
         pass
 
     def receive_message(self):
-        pass
+        command, filename, client_addr = self.socket.recvfrom(1024)
+        command = command.decode()
+        filename = filename.decode()
+        client_addr = client_addr.decode()
 
     def receive_file(self, filepath):
         pass
