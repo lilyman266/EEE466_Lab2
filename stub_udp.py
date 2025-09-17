@@ -45,10 +45,10 @@ class UDPFileTransfer(CommInterface):
         pass
 
     def receive_message(self):
-        command, filename, client_addr = self.socket.recvfrom(1024)
-        command = command.decode()
-        filename = filename.decode()
-        client_addr = client_addr.decode()
+        message, client_addr = self.socket.recvfrom(1024)
+        command = message.decode().split(":")[0]
+        filename = message.decode().split(":")[1]
+        return command, filename, client_addr
 
     def receive_file(self, filepath):
         pass
