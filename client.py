@@ -33,12 +33,12 @@ def main():
         print(f"Client sending {command} {filename}")
 
         if command.upper() == "PUT":
-            client.send_message(command, filename=filename, addr=server_addr)
+            client.send_message(command, param=filename, addr=server_addr)
             filepath = path.join("ClientFS", "upload", f"{filename}")
             client.send_file(filepath, server_addr)
 
         elif command.upper() == "GET":
-            client.send_message(command, filename=filename, addr=server_addr)
+            client.send_message(command, param=filename, addr=server_addr)
             filepath = path.join("ClientFS", "download", f"{filename}")
             client.receive_file(filepath)
 

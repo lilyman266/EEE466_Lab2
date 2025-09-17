@@ -37,8 +37,9 @@ class UDPFileTransfer(CommInterface):
         self.socket.sendto(message, dest_addr)
 
 
-    def send_message(self, data, parameters="", addr=None):
-        
+    def send_message(self, data, param="", addr=None):
+        to_send = f"{data}:{param}"
+        self.socket.sendto(to_send.encode(encoding="utf8"), addr)
 
     def send_file(self, filepath, addr):
         pass
