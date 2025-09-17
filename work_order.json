@@ -1,0 +1,30 @@
+[
+    {
+        "command": "GET",
+        "filename": "server_text_01.txt"
+    },
+    {
+        "command": "PUT",
+        "filename": "client_text_01.txt"
+    },
+    {
+        "command": "GET",
+        "filename": "server_text_02.txt"
+    },
+    {
+        "command": "PUT",
+        "filename": "client_text_02.txt"
+    },
+    {
+        "command": "PUT",
+        "filename": "cheshire_cat.jpg"
+    },
+    {
+        "command": "GET",
+        "filename": "caterpillar.jpg"
+    },
+    {
+        "command": "QUT",
+        "filename": ""
+    }
+]
