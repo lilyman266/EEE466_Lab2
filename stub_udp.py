@@ -8,7 +8,7 @@ from comm_interface import CommInterface
 
 random.seed(1)
 DROP_PROBABILITY = 0
-DUPLICATE_PROBABILITY = 0
+DUPLICATE_PROBABILITY = 0.1
 LAG_PROBABILITY = 0
 
 """DROP PROBABILITY:
@@ -43,6 +43,7 @@ class UDPFileTransfer(CommInterface):
         self.send_seq = 0
         self.recv_seq = -1
         self.client_addr = None
+        self.sent_messages = {}
 
     def initialize_as_server(self, host, port):
         self.socket.bind((host, port))
@@ -66,8 +67,8 @@ class UDPFileTransfer(CommInterface):
 
     #command = GET data = file stuff
     def send_message(self, command, data=None, seq=None, param="", addr=None):
-        # if seq is None:
-        #     seq = self.send_seq
+        if seq is None:
+            seq = self.send_seq
         #1) Take a chunk, format it with a "Syn" ||| "Type" ||| "Data"
         if param != "":
             data = param.encode()
@@ -85,23 +86,24 @@ class UDPFileTransfer(CommInterface):
         #5)     wait until timeout (resend!) or until ack
         while True:
             try:
+                #1) Append "sent file" to log#
                 self._send(to_send, addr)
                 print(f"message sent!")
 
-                # message, _ = self.socket.recvfrom(self.CHUNK_SIZE)
-                # message = message.decode()
-                # #split the message
-                # split_message = message.split("|||")
-                # #find the syn and type
-                # seq_ack = int(split_message[0])
-                # type_ack = split_message[1]
-                # #if the syn is the same, break
-                # if seq_ack == seq and type_ack == "ACK":
-                #     print(f"ACK received!")
-                #     break
-                # hopeful_ack = self.receive_message()
-                # print(f"ack message received: {hopeful_ack}")
-                #(if hopeful_ack[2] == "Ack" etc)
+                message, _ = self.socket.recvfrom(self.CHUNK_SIZE)
+                message = message.decode()
+                #split the message
+                split_message = message.split("|||")
+                #find the syn and type
+                seq_ack = int(split_message[0])
+                type_ack = split_message[1]
+                #if the syn is the same, break
+                if seq_ack == seq and type_ack == "ACK":
+                    print(f"ACK received!")
+                    break
+                hopeful_ack = self.receive_message()
+                print(f"ack message received: {hopeful_ack}")
+                # (if hopeful_ack[2] == "Ack" etc)
                 break
             except TimeoutError:
                 pass
@@ -130,7 +132,7 @@ class UDPFileTransfer(CommInterface):
         pass
         # 1) take the filepath and read(rb) CHUNK_SIZE chunks from it, passing them to send_message.
         with open(filepath, 'rb') as f:
-            while chunk := f.read(CHUNK_SIZE-500):
+            while chunk := f.read(CHUNK_SIZE-50):
                 self.send_message("FILE", data=chunk, addr=addr)
             self.send_message("EOF", data=b"", addr=addr)
 
@@ -144,22 +146,19 @@ class UDPFileTransfer(CommInterface):
 
 
                 print(f"next message received! seq_type: {msg_type}, type_ack: {msg_syn}, msg_info: {msg_info}")
-                if msg_type != b"FILE" and msg_type != b"EOF":
-                    return msg_type.decode(), msg_info.decode(), self.client_addr
-                else:
-                    return msg_type, msg_info, self.client_addr
                 #send ack message with _send if it is the next message to send
-                # if int(msg_syn) == self.recv_seq + 1:
-                #     self.recv_seq += 1
-                #     to_send = f"{self.recv_seq}|||ACK|||".encode()
-                #     self._send(to_send, dest_addr=self.client_addr)
-                #     print("returning")
-                #     return msg_syn, msg_type, msg_info.encode()
-                # else:
-                #     to_send_dropped = f"{self.recv_seq}|||ACK|||".encode()
-                #     self._send(to_send_dropped, dest_addr=self.client_addr)
-
-
+                if int(msg_syn) == self.recv_seq + 1:
+                    self.recv_seq += 1
+                    to_send = f"{self.recv_seq}|||ACK|||".encode()
+                    self._send(to_send, dest_addr=self.client_addr)
+                    print("returning")
+                    if msg_type != b"FILE" and msg_type != b"EOF":
+                        return msg_type.decode(), msg_info.decode(), self.client_addr
+                    else:
+                        return msg_type, msg_info, self.client_addr
+                else:
+                    to_send_dropped = f"{self.recv_seq}|||ACK|||".encode()
+                    self._send(to_send_dropped, dest_addr=self.client_addr)
 
                 # message, _ = self.socket.recvfrom(CHUNK_SIZE)
                 # message = message.decode()
