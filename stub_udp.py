@@ -6,9 +6,9 @@ import sys
 
 from comm_interface import CommInterface
 
-random.seed(1)
-DROP_PROBABILITY = 0
-DUPLICATE_PROBABILITY = 0.1
+random.seed(5)
+DROP_PROBABILITY = 0.1
+DUPLICATE_PROBABILITY = 0
 LAG_PROBABILITY = 0
 
 """DROP PROBABILITY:
@@ -43,7 +43,7 @@ class UDPFileTransfer(CommInterface):
         self.send_seq = 0
         self.recv_seq = -1
         self.client_addr = None
-        self.sent_messages = {}
+        self.sent_messages = []
 
     def initialize_as_server(self, host, port):
         self.socket.bind((host, port))
@@ -53,6 +53,11 @@ class UDPFileTransfer(CommInterface):
         self.socket.settimeout(5)
 
     def _send(self, message, dest_addr):
+        if message.split(b"|||")[1].decode() != "ACK":
+            self.sent_messages.append(message)
+        
+        print(f"Sending message: {message}")
+        # Simulate unreliable network conditions
         if random.random() < DROP_PROBABILITY:
             print("DROPPED!")
             return
@@ -74,59 +79,48 @@ class UDPFileTransfer(CommInterface):
             data = param.encode()
         # to_send = f"{seq}|||{command}|||{data}"
         to_send = f"{seq}|||{command}|||"
-        print(f"Message to send: {to_send}")
         #2) encode
         if data:
             to_send = to_send.encode() + data
         else:
             to_send = to_send.encode()
-        print(f"Encoded message to send: {to_send}")
         #3) loop
         #4)     send file
         #5)     wait until timeout (resend!) or until ack
+        self.send_seq += 1
         while True:
             try:
                 #1) Append "sent file" to log#
                 self._send(to_send, addr)
-                print(f"message sent!")
 
                 message, _ = self.socket.recvfrom(self.CHUNK_SIZE)
-                message = message.decode()
+                #message = message.decode()
                 #split the message
-                split_message = message.split("|||")
+                split_message = message.split(b"|||")
                 #find the syn and type
-                seq_ack = int(split_message[0])
-                type_ack = split_message[1]
+                seq_ack = int(split_message[0].decode())
+                type_ack = split_message[1].decode()
                 #if the syn is the same, break
                 if seq_ack == seq and type_ack == "ACK":
                     print(f"ACK received!")
+                    self.sent_messages.pop()
                     break
-                hopeful_ack = self.receive_message()
-                print(f"ack message received: {hopeful_ack}")
-                # (if hopeful_ack[2] == "Ack" etc)
+                elif seq_ack < seq and type_ack == "ACK":
+                    print(f"Duplicate ACK received, waiting for correct ACK. my seq: {self.send_seq}, ack seq: {seq_ack}, ack type: {type_ack}")
+                    continue
+                #if you receive something that isn't an ACK, resend the last thing
+                elif type_ack != "ACK":
+                    print(f"Ack from other side got dropped. my seq: {self.send_seq}, ack seq: {seq_ack}, ack type: {type_ack}")
+                    to_send = f"{self.recv_seq}|||ACK|||".encode()
+                    self._send(self.sent_messages[-1], dest_addr=self.client_addr)
+                    continue
+
+                print(f"Used the sneaky break... my seq: {self.send_seq}, ack seq: {seq_ack}, ack type: {type_ack}")
                 break
+                
             except TimeoutError:
-                pass
-        self.send_seq += 1
-        #6) up seq number
-        # to_send = f"{self.send_number}:{data}:{param}"
-        # self.send_number += 1
-        # #send message and wait for ACK. If ACK doesn't come in 1 second, resend
-        # # message.
-        # while 1:
-        #     print("send attempt")
-        #     self.socket.sendto(to_send.encode(encoding="utf8"), addr)
-        #     try:
-        #         message, server_addr = self.socket.recvfrom(1024)
-        #         break
-        #     except socket.timeout:
-        #         print(f"Timeout, resending packet number: {to_send.split(':')[0]}")
-        #     except ConnectionResetError:
-        #         print(f"Packet {self.send_number-1} received a connection closed. Shutting down...")
-        #         sys.exit(0)
-        #
-        # if message.decode().split(":")[1] == "ACK":
-        #     print(f"Packet number {to_send.split(':')[0]} acknowledged by server")
+                print(f"Timeout, resending packet number: {seq}")
+                continue
 
     def send_file(self, filepath, addr):
         pass
@@ -144,62 +138,29 @@ class UDPFileTransfer(CommInterface):
                 received_chunk = received_chunk
                 msg_syn, msg_type, msg_info = received_chunk.split(b"|||")
 
-
-                print(f"next message received! seq_type: {msg_type}, type_ack: {msg_syn}, msg_info: {msg_info}")
+                #compare syn to recv_syn. If it is alreadyh received, ignore content and resend ack
+                
+                #If the message is a duplicate, ignore content and resend ack
+                if int(msg_syn) <= self.recv_seq:
+                    print(f"Duplicate message received! msg_type: {msg_type}, msg_syn: {msg_syn}, my syn: {self.recv_seq}, msg_info: {msg_info}")
+                    to_send_ack = f"{int(msg_syn)}|||ACK|||".encode()
+                    self._send(to_send_ack, dest_addr=self.client_addr)
+                    continue
+                print(f"next message received! msg_type: {msg_type}, msg_syn: {msg_syn}, my syn: {self.recv_seq}, msg_info: {msg_info}")
                 #send ack message with _send if it is the next message to send
                 if int(msg_syn) == self.recv_seq + 1:
                     self.recv_seq += 1
-                    to_send = f"{self.recv_seq}|||ACK|||".encode()
+                    to_send = f"{int(msg_syn)}|||ACK|||".encode()
                     self._send(to_send, dest_addr=self.client_addr)
                     print("returning")
                     if msg_type != b"FILE" and msg_type != b"EOF":
                         return msg_type.decode(), msg_info.decode(), self.client_addr
                     else:
                         return msg_type, msg_info, self.client_addr
-                else:
-                    to_send_dropped = f"{self.recv_seq}|||ACK|||".encode()
-                    self._send(to_send_dropped, dest_addr=self.client_addr)
 
-                # message, _ = self.socket.recvfrom(CHUNK_SIZE)
-                # message = message.decode()
-                # # split the message
-                # split_message = message.split("|||")
-                # # find the syn and type
-                # seq_ack = int(split_message[0])
-                # type_ack = split_message[1]
-                # print(f"next message received! seq_ack: {seq_ack}, type_ack: {type_ack}")
-                # if the syn is the same, break
-                # if seq_ack > self.recv_seq:
-                #     print(f"next message received!")
-                #     break
-                # 2) on receive, send "Syn = Syn (recv)" ||| "Type = Ack" ||| "Data = """ and wait for the next send. if Syn is higher than previous syn, then keep going
-                # print(int(msg_syn))
-                # 3) decode
-                # 4) return msg.split("|||") (list!!!)
             except TimeoutError:
                 print("wtf")
                 continue
-        # while 1:
-        #     try:
-        #         message, client_addr = self.socket.recvfrom(1024)
-        #         break
-        #     except socket.timeout:
-        #         print("Socket timed out. Trying again...")
-        # number = message.decode().split(":")[0]
-        # command = message.decode().split(":")[1]
-        # filename = message.decode().split(":")[2]
-        # #do operations with number
-        # #if packet is out of order, request again. Otherwise, send ACK
-        # if int(number) > self.recv_number:
-        #     print(f"Packet {number} received out of order, requesting again")
-        #     self.send_message("ERR", param=f"Packet {number} missing", addr=client_addr)
-        #     return self.receive_message()
-        # self.recv_number += 1
-        # print(f"Received packet number: {number}. Current tally is {self.recv_number}")
-        # if command != "QUT":
-        #     self.send_message("ACK", addr=client_addr)
-        #     print("ACK sent!")
-        # return command, filename, client_addr
 
     def receive_file(self, filepath):
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
