@@ -85,8 +85,17 @@ class UDPFileTransfer(CommInterface):
     #            checked on receive, and put in the ack, so both sender stay 
     #            synchronized.
     #      param - command data, not encoded in bytes.
-    #      addr - socket to send message to
+    #      addr - socket to send message to.
+    # Returns:
+    #      N/A
+    # Description:
+    #      This method sends a message reliably adhereing to a custom UDP File Transfer
+    #      protocol made for this application. It first constructs the message based on
+    #      the parameters it was given, then sends it. After the send, it waits for an
+    #      ACK to be returned for that specific packet, and exits. If this does not 
+    #      happen within the socket timeout time, the message gets sent again.
     def send_message(self, command, data=None, seq=None, param="", addr=None):
+        #Firstly, the message builds the message based on the parameters it received.
         if seq is None:
             seq = self.send_seq
         #1) Take a chunk, format it with a "Syn" ||| "Type" ||| "Data"
@@ -99,17 +108,19 @@ class UDPFileTransfer(CommInterface):
             to_send = to_send.encode() + data
         else:
             to_send = to_send.encode()
-        #3) loop
-        #4)     send file
-        #5)     wait until timeout (resend!) or until ack
+        #next, the function increments its sequence number on the "send" side. This will
+        #be used to coordinate messages.
         self.send_seq += 1
         while True:
             try:
-                #1) Append "sent file" to log#
+                #1) send the message
                 self._send(to_send, addr)
-
+                # 2) Wait for an ACK. If it is a duplicate message, drop it. If it is not
+                # an ack, the other side's ack must have been dropped. To re-coordinate,
+                # resend your message. The other side will receive it as a duplicate,
+                # resend the ack, and resend the message you just received. Sneaky break
+                # should never be accessed. In testing, it was never accessed.
                 message, _ = self.socket.recvfrom(self.CHUNK_SIZE)
-                #message = message.decode()
                 #split the message
                 split_message = message.split(b"|||")
                 #find the syn and type
@@ -132,11 +143,21 @@ class UDPFileTransfer(CommInterface):
 
                 print(f"Used the sneaky break... my seq: {self.send_seq}, ack seq: {seq_ack}, ack type: {type_ack}")
                 break
-                
+            # If the socket times out, resend the packet.
             except TimeoutError:
                 print(f"Timeout, resending packet number: {seq}")
                 continue
-
+    # Send File:
+    # Parameters:
+    #      self - enables acess to local attributes.
+    #      filepath - filepath to read the file to be sent from.
+    #      addr - socket to send to.
+    # Returns:
+    #      N/A
+    # Description:
+    #      Simply opens a file and reads it in chunks to be sent. The chunk size is based
+    #      on the global variable CHUNK_SIZE, minus enough bytes for the packet header to 
+    #      be added on, making a total packet size no greater than CHUNK_SIZE.
     def send_file(self, filepath, addr):
         pass
         # 1) take the filepath and read(rb) CHUNK_SIZE chunks from it, passing them to send_message.
@@ -144,11 +165,30 @@ class UDPFileTransfer(CommInterface):
             while chunk := f.read(CHUNK_SIZE-50):
                 self.send_message("FILE", data=chunk, addr=addr)
             self.send_message("EOF", data=b"", addr=addr)
-
+           
+    # Receive Message:
+    # Parameters:
+    #      self - enables acess to local attributes.
+    # Returns:
+    #      msg_type - The type of the message received. This could be GET, PUT, QUT, DEL,
+    #         ACK, FILE, or EOF.
+    #      msg_info - The data that the message contained. This could either be file data
+    #         or an instruction.
+    #      self.client_addr - this is the address of the client. This is added to ensure
+    #         functionality of both the client and server applications.
+    # Description:
+    #      This function is designed to reliable receive a message using a custom UDP File
+    #      Transfer Protocol designed for this lab. It first tries to receive a message.
+    #      If it does not receive a message in the socket timeout time, then it tries
+    #      again. When it receives a message, it checks if that message is a duplicate.
+    #      If it is, it droppes that message. Next, if the message is the message to be 
+    #      received, then it sends an ACK message back. Lastly, it contains some return
+    #      logic to account for the different implementations of instruction receiving
+    #      and file chunk receiving.
     def receive_message(self):
-        #1) try to receive chunk (timeout just loop)
         while True:
             try:
+               #receive chunck
                 received_chunk, self.client_addr = self.socket.recvfrom(self.CHUNK_SIZE)
                 received_chunk = received_chunk
                 msg_syn, msg_type, msg_info = received_chunk.split(b"|||")
@@ -168,15 +208,25 @@ class UDPFileTransfer(CommInterface):
                     to_send = f"{int(msg_syn)}|||ACK|||".encode()
                     self._send(to_send, dest_addr=self.client_addr)
                     print("returning")
+                   # Return Logic
                     if msg_type != b"FILE" and msg_type != b"EOF":
                         return msg_type.decode(), msg_info.decode(), self.client_addr
                     else:
                         return msg_type, msg_info, self.client_addr
 
             except TimeoutError:
-                print("wtf")
+                print("Message Receive Timed out")
                 continue
-
+    # Receive File:
+    # Parameters:
+    #      self - enables acess to local attributes.
+    #      filepath - filepath to write the file to be receives to.
+    # Returns:
+    #      N/A
+    # Description:
+    #      Simply opens a file and calls receive message. Every message until the EOF
+    #      message should be written to the file just opened. When it reches the EOF
+    #      message, continue execution.
     def receive_file(self, filepath):
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         #1) open path to write(wb) to
@@ -190,4 +240,3 @@ class UDPFileTransfer(CommInterface):
                     break
                 else:
                     print(f"unknown command {msg_type}")
-        #3)
