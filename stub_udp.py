@@ -70,7 +70,22 @@ class UDPFileTransfer(CommInterface):
 
         self.socket.sendto(message, dest_addr)
 
-    #command = GET data = file stuff
+    #Send_message:
+    # Parameters:
+    #      self - enables acess to local attributes
+    #      command - Determines the TYPE of message. In addition to the message types 
+    #            in the starting code, there is ACK added which represents a packet 
+    #            whose only purpose is to ack a previous packet, and FILE, which tells
+    #            the receiver that the data within must be written to a file (whose
+    #            path is defined by the GET or PUT request). Lastly there is an EOF
+    #            message type, which signifies the end of a file, allowing for 
+    #            execution to continue.
+    #      data - file data, already encoded in bytes. 
+    #      seq - integer which represents the sender's seqence number. This is used
+    #            checked on receive, and put in the ack, so both sender stay 
+    #            synchronized.
+    #      param - command data, not encoded in bytes.
+    #      addr - socket to send message to
     def send_message(self, command, data=None, seq=None, param="", addr=None):
         if seq is None:
             seq = self.send_seq
