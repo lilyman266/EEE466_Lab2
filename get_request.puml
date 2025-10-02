@@ -1,0 +1,16 @@
+@startuml get_request
+Server -> ServerUDPFileTransfer: command, filename, client_addr = receive_message
+Client -> ClientUDPFileTransfer: send_message(command, param=filename, add=server addr)
+ClientUDPFileTransfer -> ClientUDPFileTransfer: _send(message, dest_addr)
+
+Client -> ClientUDPFileTransfer: receive_file(filepath)
+Server -> ServerUDPFileTransfer: send_file(filepath, client_addr)
+loop EOF not received
+ServerUDPFileTransfer -> ServerUDPFileTransfer: send_message("FILE", data=chunk, addr=addr)
+ServerUDPFileTransfer -> ServerUDPFileTransfer: _send(to_send, addr)
+ServerUDPFileTransfer -> ServerUDPFileTransfer: recvfrom(self.CHUNK_SIZE)
+ClientUDPFileTransfer -> ClientUDPFileTransfer: receive_message()
+ClientUDPFileTransfer -> ClientUDPFileTransfer: recvfrom(self.CHUNK_SIZE)
+ClientUDPFileTransfer -> ClientUDPFileTransfer: _send(to_send_ack, dest_addr=self.client_addr)
+end
+@enduml
